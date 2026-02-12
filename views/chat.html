@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    <title>Chat App</title>
+</head>
+<body class="container-fluid mt-3">
+
+    <div class="row">
+
+        <!-- Sidebar (Select room or private chat) -->
+        <div class="col-md-3 border-end">
+            <h4>Rooms</h4>
+            <select id="roomSelect" class="form-select mb-2">
+                <option value="devops">DevOps</option>
+                <option value="sports">Sports</option>
+                <option value="movies">Movies</option>
+                <option value="animals">Animals</option>
+            </select>
+            <button id="joinRoomBtn" class="btn btn-primary w-100 mb-5">Join Room</button>
+
+            <h4>Private Chat</h4>
+            <input id="privateUser" class="form-control mb-2" placeholder="Enter a username">
+            <button id="openPrivateBtn" class="btn btn-secondary w-100 mb-2">Open Chat</button>
+            <p id="privateError" class="fw-bold text-danger"></p>
+
+            <p class="fw-bold">Logged in as <span id="loggedUser"></span></p>
+
+            <button id="logoutBtn" class="btn btn-danger w-100 mt-8">Logout</button>
+        </div>
+
+        <!-- Chat Screen -->
+        <div class="col-md-9">
+            <h4 id="chatTitle">Select a Room or Private Chat</h4>
+
+            <div id="chatBox" class="border p-3 mb-3" style="height:500px; overflow-y: auto"></div>
+
+            <p id="typingIndicator" class="text-muted"></p>
+
+            <div class="d-flex">
+                <input id="messageInput" class="form-control me-2" placeholder="Type your message here...">
+                <button id="sendBtn" class="btn btn-success">Send</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const username = localStorage.getItem("username");
+
+        if (!username) window.location.href = "login.html";
+
+        socket.on("connect", () => {
+            socket.emit("registerUser", username);
+        });
+
+        document.getElementById("loggedUser").innerText = username;
+
+        let currentRoom = null;
+        let currentPrivateUser = null;
+
+        // Join Room
+        document.getElementById("joinRoomBtn").onclick = () => {
+            const room = document.getElementById("roomSelect").value;
+            currentPrivateUser = null;
+            currentRoom = room;
+
+            document.getElementById("chatTitle").innerText = "Room: " + room.toUpperCase();
+            document.getElementById("chatBox").innerHTML = "";
+
+            socket.emit("joinRoom", { username, room });
+        };
+
+        // Open Private Chat
+        document.getElementById("openPrivateBtn").onclick = () => {
+            const otherUser = document.getElementById("privateUser").value.trim().toLowerCase();
+            if (!otherUser) return;
+
+            socket.emit("loadPrivateMessages", {
+                user1: username,
+                user2: otherUser
+            });
+        };
+
+        // Send Message
+        document.getElementById("sendBtn").onclick = () => {
+            const message = document.getElementById("messageInput").value;
+            if (!message) return;
+
+            if (currentRoom) {
+                socket.emit("roomMessage", { 
+                    username,
+                    room: currentRoom,
+                    message });
+            } else if (currentPrivateUser) {
+                socket.emit("privateMessage", {
+                    from: username,
+                    to: currentPrivateUser,
+                    message
+                });
+            } else {
+                return;
+            }
+
+            document.getElementById("messageInput").value = "";
+        };
+
+        // Typing Indicator
+        document.getElementById("messageInput").addEventListener("input", () => {
+            if (currentRoom) {
+                socket.emit("roomTyping", { username, room: currentRoom });
+            } else if (currentPrivateUser) {
+                socket.emit("privateTyping", { from: username, to: currentPrivateUser });
+            }
+        });
+
+        // Socket Listeners
+        socket.on("roomMessage", (data) => {
+            document.getElementById("chatBox").innerHTML +=
+                `<p><strong>${data.username}:</strong> ${data.message}</p>`;
+        });
+
+        socket.on("privateMessage", (data) => {
+            document.getElementById("chatBox").innerHTML +=
+                `<p><strong>${data.from}:</strong> ${data.message}</p>`;
+        });
+
+        socket.on("privateMessageHistory", (messages) => {
+            const otherUser = document.getElementById("privateUser").value.trim().toLowerCase();
+
+            currentRoom = null;
+            currentPrivateUser = otherUser;
+
+            document.getElementById("privateError").innerText = "";
+
+            document.getElementById("chatTitle").innerText =
+                "Private Chat with " + otherUser;
+
+            document.getElementById("chatBox").innerHTML = "";
+
+            messages.forEach(msg => {
+                document.getElementById("chatBox").innerHTML +=
+                    `<p><strong>${msg.from_user}:</strong> ${msg.message}</p>`;
+            });
+        });
+
+        socket.on("roomTyping", (msg) => {
+            document.getElementById("typingIndicator").innerText = msg;
+            setTimeout(() => {
+                document.getElementById("typingIndicator").innerText = "";
+            }, 2000);
+        });
+
+        socket.on("privateTyping", (msg) => {
+            document.getElementById("typingIndicator").innerText = msg;
+            setTimeout(() => {
+                document.getElementById("typingIndicator").innerText = "";
+            }, 2000);
+        });
+
+        // Private Message Error
+        socket.on("privateMessageError", (errorMessage) => {
+            document.getElementById("privateError").innerText = errorMessage;
+
+            currentPrivateUser = null;
+        });
+
+        // Logout
+        document.getElementById("logoutBtn").onclick = () => {
+            localStorage.removeItem("username");
+            window.location.href = "login.html";
+        };
+    </script>
+
+</body>
+</html>

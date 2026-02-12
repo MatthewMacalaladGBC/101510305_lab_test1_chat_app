@@ -15,8 +15,8 @@ const GroupMessageSchema = new mongoose.Schema({
     },
     date_sent: {
         type: Date,
-        required: true
+        default: Date.now
     }
 });
 
-module.exports = mongoose.model("GroupMessage", GroupMessageSchema, "GroupMessages");
+module.exports = mongoose.model("GroupMessage", GroupMessageSchema);

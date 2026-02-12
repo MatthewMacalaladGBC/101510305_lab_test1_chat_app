@@ -40,6 +40,8 @@ app.use("/api/auth", authRoutes);
 const GroupMessage = require("./models/GroupMessage");
 const PrivateMessage = require("./models/PrivateMessage");
 
+const User = require("./models/User");
+
 const onlineUsers = {};
 
 io.on("connection", (socket) => {
@@ -58,7 +60,7 @@ io.on("connection", (socket) => {
 
         const messages = await GroupMessage.find({ room });
 
-        message.forEach(msg => {
+        messages.forEach(msg => {
             socket.emit("roomMessage", {
                 username: msg.from_user,
                 message: msg.message
@@ -92,46 +94,66 @@ io.on("connection", (socket) => {
 
     // Private Message
     socket.on("privateMessage", async ({ from, to, message }) => {
-        const targetSocketId = onlineUsers[to];
+        try {
+            const sender = from.toLowerCase();
+            const receiver = to.toLowerCase();
 
-        if (!targetSocketId) {
-            console.log("User not online:", to);
-            return;
+            const userExists = await User.findOne({ username: receiver });
+            if (!userExists) {
+                return socket.emit("privateMessageError", "User does not exist.");
+            }
+
+            const newPrivateMessage = new PrivateMessage({
+                from_user: sender,
+                to_user: receiver,
+                message
+            });
+
+            await newPrivateMessage.save();
+
+            const targetSocketId = onlineUsers[receiver];
+
+            if (targetSocketId) {
+                io.to(targetSocketId).emit("privateMessage", {
+                    from: sender,
+                    message,
+                    date_sent: newPrivateMessage.date_sent
+                });
+            }
+
+            // Ensure that sender also sees the message
+            socket.emit("privateMessage", {
+                from,
+                message,
+                date_sent: newPrivateMessage.date_sent
+            });
+
+        } catch (err) {
+            console.error("Error sending private message:", err);
         }
-
-        const newPrivateMessage = PrivateMessage({
-            from_user: username,
-            to_user: to,
-            message
-        });
-
-        await newPrivateMessage.save();
-
-        io.to(targetSocketId).emit("privateMessage", {
-            from,
-            message
-        });
-
-        // Ensure that sender also sees the message
-        socket.emit("privateMessage", {
-            from,
-            message
-        });
     });
 
     // Load Private Messages
     socket.on("loadPrivateMessages", async ({ user1, user2 }) => {
         try {
+            const receiver = user2.toLowerCase();
+
+            const userExists = await User.findOne({ username: receiver });
+
+            if (!userExists) {
+                return socket.emit("privateMessageError", "User does not exist.")
+            }
+
             const messages = await PrivateMessage.find({
                 $or: [
-                    { from_user: user1, to_user: user2 },
-                    { from_user: user2, to_user: user1 },
+                    { from_user: user1.toLowerCase(), to_user: user2.toLowerCase() },
+                    { from_user: user2.toLowerCase(), to_user: user1.toLowerCase() },
                 ]
             }).sort({ date_sent: 1 });
 
-            socket.emit("privateMessageHistory", messages)
+            socket.emit("privateMessageHistory", messages);
         } catch (err) {
-            console.error("Error loading private messages:", err)
+            console.error("Error loading private messages:", err);
         }
     });
 
@@ -169,7 +191,7 @@ server.listen(SERVER_PORT, async () => {
   try {
     await connectToMongoDB(DB_CONNECTION);
     console.log("Connected to MongoDB");
-  } catch (error) {
-    console.error("Error connecting to MongoDB:", error);
+  } catch (err) {
+    console.error("Error connecting to MongoDB:", err);
   }
 });

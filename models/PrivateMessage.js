@@ -15,8 +15,8 @@ const PrivateMessageSchema = new mongoose.Schema({
     },
     date_sent: {
         type: Date,
-        required: true
+        default: Date.now
     }
 });
 
-module.exports = mongoose.model("PrivateMessage", PrivateMessageSchema, "PrivateMessages");
+module.exports = mongoose.model("PrivateMessage", PrivateMessageSchema);
